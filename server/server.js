@@ -6,7 +6,7 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 
 // ============================================================
-// DB — Render provides DATABASE_URL with SSL required
+// DB — external PostgreSQL providers use DATABASE_URL with SSL required
 // ============================================================
 const pool = new Pool(
     process.env.DATABASE_URL
