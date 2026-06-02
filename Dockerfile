@@ -1,11 +1,12 @@
 FROM node:18-alpine
 
-WORKDIR /app/server
+WORKDIR /app
 
-COPY server/package.json ./
-RUN npm install --production
+COPY server/package.json ./server/package.json
+RUN npm install --prefix ./server --production
 
-COPY server/ ./
+COPY server/ ./server/
+COPY init.sql ./init.sql
 
 EXPOSE 3000
-CMD ["node", "server.js"]
+CMD ["node", "server/server.js"]
