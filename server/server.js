@@ -118,7 +118,7 @@ app.get("/api/lines", async (req, res) => {
         for (const row of rows) {
             if (!lines[row.line_id])
                 lines[row.line_id] = { lineId:row.line_id, input:null, output:null };
-            const online = row.last_seen && (Date.now()-new Date(row.last_seen)) < 60000;
+            const online = row.last_seen && (Date.now()-new Date(row.last_seen)) < 90000;
             const m = {
                 machineId:   row.machine_id,
                 online,
@@ -544,11 +544,22 @@ function showPage(name,el){
 
 async function fetchLive(){
   try{
-    const data=await fetch('/api/lines').then(r=>r.json());
+    const resp=await fetch('/api/lines');
+    const data=await resp.json();
+    // ── CRASH FIX: DB not ready yet returns {error:...}, not an array ──
+    if(!Array.isArray(data)){
+      document.getElementById('live-sub').textContent='⚠ Server starting...';
+      document.getElementById('last-refresh').textContent=new Date().toLocaleTimeString();
+      document.getElementById('live-lines').innerHTML=\`<div style="padding:28px;background:var(--surface);border:1px solid var(--yellow);border-radius:12px;color:var(--yellow);text-align:center;margin-top:16px;font-size:.95rem">
+        ⏳ Database is starting up on Render — usually takes 30–60 s.<br>
+        <span style="font-size:.78rem;color:var(--muted)">This page refreshes every 3 s automatically.</span>
+      </div>\`;
+      return;
+    }
     const total=data.length;
     const online=data.filter(l=>(l.input?.online||l.output?.online)).length;
     document.getElementById('live-sub').textContent=total+' line'+(total!==1?'s':'')+' · '+online+' online';
-    document.getElementById('last-refresh').textContent=new Date().toLocaleTimeString();
+    document.getElementById('last-refresh').textContent='Updated '+new Date().toLocaleTimeString();
     let ab=0,s27=0,cur=0,out=0;
     data.forEach(l=>{ab+=l.input?.countAB||0;s27+=l.input?.count27||0;cur+=l.input?.countCur||0;out+=l.output?.countOutput||0});
     document.getElementById('live-stats').innerHTML=\`
@@ -558,36 +569,79 @@ async function fetchLive(){
       <div class="stat-card"><div class="stat-label">Current Cycles</div><div class="stat-value" style="color:var(--yellow)">\${cur}</div><div class="stat-sub">cumulative</div></div>
       <div class="stat-card"><div class="stat-label">Output Pieces</div><div class="stat-value" style="color:var(--purple)">\${out}</div><div class="stat-sub">cumulative</div></div>
     \`;
-    if(!data.length){document.getElementById('live-lines').innerHTML='<div style="color:var(--muted);margin-top:32px">No machines synced yet.</div>';return}
-    document.getElementById('live-lines').innerHTML=data.map(line=>\`
-      <div class="line-card">
-        <div class="line-head"><span class="line-name">📦 \${line.lineId}</span>
-          <span style="font-size:.72rem;color:var(--muted)">\${[line.input,line.output].filter(Boolean).filter(m=>m.online).length}/2 online</span>
+    if(!data.length){
+      document.getElementById('live-lines').innerHTML=\`<div style="padding:28px;background:var(--surface);border:1px solid var(--border);border-radius:12px;color:var(--muted);text-align:center;margin-top:16px">
+        📡 No machines have synced yet.<br>
+        <span style="font-size:.78rem">Waiting for ESP32 — first sync appears ~30 s after boot.</span>
+      </div>\`;
+      return;
+    }
+    document.getElementById('live-lines').innerHTML=data.map(line=>{
+      const anyOnline=[line.input,line.output].filter(Boolean).some(m=>m.online);
+      const onlineCnt=[line.input,line.output].filter(Boolean).filter(m=>m.online).length;
+      return\`<div class="line-card" style="border:1px solid \${anyOnline?'var(--green)':'var(--border)'}">
+        <div class="line-head">
+          <span class="line-name">📦 \${line.lineId}</span>
+          <span style="font-size:.82rem;font-weight:800;color:\${anyOnline?'var(--green)':'var(--red)'}">\${anyOnline?'● '+onlineCnt+'/2 ONLINE':'● ALL OFFLINE'}</span>
         </div>
         <div class="machines-row">\${mbox(line.input,'INPUT')}\${mbox(line.output,'OUTPUT')}</div>
-      </div>
-    \`).join('');
-  }catch(e){console.error(e)}
+      </div>\`;
+    }).join('');
+  }catch(e){
+    document.getElementById('live-sub').textContent='⚠ Connection error';
+    document.getElementById('live-lines').innerHTML=\`<div style="padding:28px;background:var(--surface);border:1px solid var(--red);border-radius:12px;color:var(--red);text-align:center;margin-top:16px">❌ Cannot reach server. Check your network.</div>\`;
+  }
 }
 
 function mbox(m,label){
-  if(!m)return\`<div class="machine-box"><div class="m-top"><div><div class="m-label">\${label} MACHINE</div><div class="m-id" style="color:var(--muted)">Not configured</div></div><span class="badge badge-nc">N/C</span></div></div>\`;
+  if(!m)return\`<div class="machine-box" style="opacity:.45">
+    <div class="m-top"><div><div class="m-label">\${label} MACHINE</div>
+    <div class="m-id" style="color:var(--muted)">Not configured</div></div>
+    <span class="badge badge-nc">N/C</span></div>
+  </div>\`;
   const isIn=label==='INPUT';
-  return\`<div class="machine-box">
-    <div class="m-top"><div><div class="m-label">\${label} MACHINE</div><div class="m-id">\${m.machineId}</div></div>
-    <span class="badge \${m.online?'badge-on':'badge-off'}">\${m.online?'● ONLINE':'● OFFLINE'}</span></div>
-    <div class="metrics-mini">
+  const sc=m.online?'var(--green)':'var(--red)';
+  const sbg=m.online?'rgba(74,222,128,.13)':'rgba(248,113,113,.13)';
+  return\`<div class="machine-box" style="border-top:3px solid \${sc}">
+    <div class="m-top">
+      <div>
+        <div class="m-label">\${label} MACHINE</div>
+        <div class="m-id" style="font-size:.9rem">\${m.machineId}</div>
+      </div>
+      <span style="font-size:.8rem;font-weight:800;padding:6px 14px;border-radius:999px;background:\${sbg};color:\${sc};border:1px solid \${sc};white-space:nowrap">
+        \${m.online?'● ONLINE':'● OFFLINE'}
+      </span>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(\${isIn?4:2},1fr);gap:8px;margin-top:14px">
     \${isIn?\`
-      <div class="met"><div class="met-v" style="color:var(--blue)">\${m.countAB}</div><div class="met-l">25+26</div></div>
-      <div class="met"><div class="met-v" style="color:var(--green)">\${m.count27}</div><div class="met-l">H.Shoe</div></div>
-      <div class="met"><div class="met-v" style="color:var(--yellow)">\${m.countCur}</div><div class="met-l">Current</div></div>
-      <div class="met"><div class="met-v" style="color:var(--muted)">\${m.currentAmps.toFixed(2)}A</div><div class="met-l">Amps</div></div>
+      <div style="background:#0b1220;border-radius:8px;padding:12px 8px;text-align:center">
+        <div style="font-size:2rem;font-weight:900;color:var(--blue);line-height:1">\${m.countAB}</div>
+        <div style="font-size:.62rem;color:var(--muted);margin-top:5px;text-transform:uppercase;letter-spacing:.04em">25 + 26</div>
+      </div>
+      <div style="background:#0b1220;border-radius:8px;padding:12px 8px;text-align:center">
+        <div style="font-size:2rem;font-weight:900;color:var(--green);line-height:1">\${m.count27}</div>
+        <div style="font-size:.62rem;color:var(--muted);margin-top:5px;text-transform:uppercase;letter-spacing:.04em">Horse Shoe</div>
+      </div>
+      <div style="background:#0b1220;border-radius:8px;padding:12px 8px;text-align:center">
+        <div style="font-size:2rem;font-weight:900;color:var(--yellow);line-height:1">\${m.countCur}</div>
+        <div style="font-size:.62rem;color:var(--muted);margin-top:5px;text-transform:uppercase;letter-spacing:.04em">Cur Cycles</div>
+      </div>
+      <div style="background:#0b1220;border-radius:8px;padding:12px 8px;text-align:center">
+        <div style="font-size:2rem;font-weight:900;color:var(--orange);line-height:1">\${m.currentAmps.toFixed(1)}</div>
+        <div style="font-size:.62rem;color:var(--muted);margin-top:5px;text-transform:uppercase;letter-spacing:.04em">Amps</div>
+      </div>
     \`:\`
-      <div class="met"><div class="met-v" style="color:var(--purple)">\${m.countOutput}</div><div class="met-l">Output IR</div></div>
-      <div class="met"><div class="met-v" style="color:var(--muted)">\${m.currentAmps.toFixed(2)}A</div><div class="met-l">Amps</div></div>
+      <div style="background:#0b1220;border-radius:8px;padding:12px 8px;text-align:center">
+        <div style="font-size:2rem;font-weight:900;color:var(--purple);line-height:1">\${m.countOutput}</div>
+        <div style="font-size:.62rem;color:var(--muted);margin-top:5px;text-transform:uppercase;letter-spacing:.04em">Output IR</div>
+      </div>
+      <div style="background:#0b1220;border-radius:8px;padding:12px 8px;text-align:center">
+        <div style="font-size:2rem;font-weight:900;color:var(--orange);line-height:1">\${m.currentAmps.toFixed(1)}</div>
+        <div style="font-size:.62rem;color:var(--muted);margin-top:5px;text-transform:uppercase;letter-spacing:.04em">Amps</div>
+      </div>
     \`}
     </div>
-    <div class="last-seen">Last seen: \${since(m.lastSeen)}</div>
+    <div style="font-size:.68rem;margin-top:10px;color:\${m.online?'var(--green)':'var(--muted)'}">🕐 Last sync: \${since(m.lastSeen)}</div>
   </div>\`;
 }
 
@@ -749,7 +803,7 @@ async function runEvents(){
 }
 
 fetchLive();
-setInterval(fetchLive,5000);
+setInterval(fetchLive,3000);
 document.getElementById('modal-overlay').addEventListener('click',function(e){if(e.target===this)closeModal()});
 </script>
 </body>
