@@ -1,0 +1,35 @@
+version: "3.8"
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: cloth_db
+    restart: always
+    environment:
+      POSTGRES_USER: cloth
+      POSTGRES_PASSWORD: cloth123
+      POSTGRES_DB: clothdb
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+
+  server:
+    build: ./server
+    container_name: cloth_server
+    restart: always
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: cloth
+      DB_PASSWORD: cloth123
+      DB_NAME: clothdb
+      PORT: 3000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - db
+
+volumes:
+  pgdata:
