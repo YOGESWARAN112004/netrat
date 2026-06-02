@@ -1,5 +1,9 @@
+const dns = require("dns");
 const express = require("express");
 const { Pool } = require("pg");
+
+// Render's container can fail on IPv6-only resolution paths; prefer IPv4 for Supabase.
+dns.setDefaultResultOrder("ipv4first");
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
