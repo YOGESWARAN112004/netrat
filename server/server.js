@@ -250,6 +250,11 @@ app.get("/api/events", async (req, res) => {
 });
 
 // ============================================================
+// HEALTH CHECK — Render uses this to confirm the service is up
+// ============================================================
+app.get("/healthz", (_req, res) => res.json({ ok: true }));
+
+// ============================================================
 // DASHBOARD — same UI as before
 // ============================================================
 app.get("/", (req, res) => { res.send(`<!DOCTYPE html>
@@ -751,10 +756,12 @@ document.getElementById('modal-overlay').addEventListener('click',function(e){if
 </html>`);
 });
 
-initDB().then(() => {
-    app.listen(PORT, "0.0.0.0", () => {
-        console.log(`\n===== CLOTH COUNTER =====`);
-        console.log(`http://localhost:${PORT}`);
-        console.log(`=========================\n`);
+app.listen(PORT, "0.0.0.0", () => {
+    console.log(`\n===== CLOTH COUNTER =====`);
+    console.log(`http://localhost:${PORT}`);
+    console.log(`=========================\n`);
+    initDB().catch(err => {
+        console.error("[DB] Fatal init error:", err.message);
+        process.exit(1);
     });
 });

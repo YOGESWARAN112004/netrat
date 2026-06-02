@@ -11,6 +11,7 @@ services:
     plan: free
     buildCommand: npm install --prefix server
     startCommand: node server/server.js
+    healthCheckPath: /healthz
     envVars:
       - key: DATABASE_URL
         fromDatabase:
