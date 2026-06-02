@@ -31,9 +31,25 @@ const pool = new Pool(
 );
 
 // ============================================================
-// DB init — run the SQL schema file, then wait for the DB to be ready
+// DB init — wait for Render Postgres, then run the SQL schema file
 // ============================================================
 async function initDB() {
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+  for (let i = 0; i < 60; i++) {
+    try {
+      await pool.query("SELECT 1");
+      console.log("[DB] Connected");
+      break;
+    } catch (err) {
+      console.log(`[DB] Waiting... (${i + 1}/60)`);
+      if (i === 59) {
+        throw err;
+      }
+      await sleep(5000);
+    }
+  }
+
   const schemaPath = path.join(__dirname, "..", "init.sql");
   const schemaSql = await fs.readFile(schemaPath, "utf8");
   const statements = schemaSql
@@ -41,22 +57,11 @@ async function initDB() {
     .map(stmt => stmt.trim())
     .filter(Boolean);
 
-    for (let i = 0; i < 10; i++) {
-        try {
-            await pool.query("SELECT 1");
-            console.log("[DB] Connected");
-            break;
-        } catch {
-            console.log(`[DB] Waiting... (${i+1}/10)`);
-            await new Promise(r => setTimeout(r, 2000));
-        }
-    }
+  for (const statement of statements) {
+    await pool.query(statement);
+  }
 
-        for (const statement of statements) {
-          await pool.query(statement);
-        }
-
-    console.log("[DB] Tables ready");
+  console.log("[DB] Tables ready");
 }
 
 // ============================================================
